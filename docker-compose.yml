@@ -1,0 +1,9 @@
+services:
+  notion-backup:
+    build: .
+    env_file: .env
+    volumes:
+      - ./downloads:/app/downloads
+    # Optional: set CRON_SCHEDULE to run on a schedule (runs once without it)
+    # environment:
+    #   CRON_SCHEDULE: "0 3 * * *"  # daily at 3am

@@ -1,7 +1,9 @@
+import argparse
 import sys
 import time
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -165,39 +167,79 @@ def download_file(client: httpx.Client, url: str, dest: Path) -> Path:
     return dest
 
 
-def main():
+@dataclass
+class Config:
+    space_id: str
+    token: str
+    export_type: str
+    flatten: bool
+    export_comments: bool
+    downloads_dir: Path
+    output_filename: str | None
+
+
+def parse_config() -> Config:
+    """Parse configuration from CLI args, falling back to env vars/.env."""
     load_dotenv()
 
-    space_id = os.environ.get("NOTION_SPACE_ID")
-    token = os.environ.get("NOTION_TOKEN_V2")
+    parser = argparse.ArgumentParser(description="Export a Notion workspace to a local zip file.")
+    parser.add_argument("--space-id", help="Notion workspace ID (env: NOTION_SPACE_ID)")
+    parser.add_argument("--token", help="Notion token_v2 cookie (env: NOTION_TOKEN_V2)")
+    parser.add_argument("--export-type", choices=["markdown", "html"],
+                        help="Export format (env: NOTION_EXPORT_TYPE, default: markdown)")
+    parser.add_argument("--flatten", action="store_true", default=None,
+                        help="Flatten export file tree (env: NOTION_FLATTEN_EXPORT_FILETREE)")
+    parser.add_argument("--no-comments", action="store_true", default=None,
+                        help="Exclude comments from export (env: NOTION_EXPORT_COMMENTS)")
+    parser.add_argument("--output-dir", type=Path,
+                        help="Download directory (env: DOWNLOADS_DIRECTORY_PATH, default: ./downloads)")
+    parser.add_argument("--output-filename",
+                        help="Fixed filename for the export (overwrites existing, env: NOTION_EXPORT_FILENAME)")
+    args = parser.parse_args()
+
+    space_id = args.space_id or os.environ.get("NOTION_SPACE_ID")
+    token = args.token or os.environ.get("NOTION_TOKEN_V2")
     if not space_id or not token:
-        log.error("NOTION_SPACE_ID and NOTION_TOKEN_V2 environment variables are required")
-        sys.exit(1)
+        parser.error("NOTION_SPACE_ID and NOTION_TOKEN_V2 are required (via args or env)")
 
-    export_type = os.environ.get("NOTION_EXPORT_TYPE", "markdown")
-    flatten = os.environ.get("NOTION_FLATTEN_EXPORT_FILETREE", "false").lower() == "true"
-    export_comments = os.environ.get("NOTION_EXPORT_COMMENTS", "true").lower() == "true"
-    downloads_dir = Path(os.environ.get("DOWNLOADS_DIRECTORY_PATH", "./downloads"))
+    return Config(
+        space_id=space_id,
+        token=token,
+        export_type=args.export_type or os.environ.get("NOTION_EXPORT_TYPE", "markdown"),
+        flatten=args.flatten if args.flatten is not None
+            else os.environ.get("NOTION_FLATTEN_EXPORT_FILETREE", "false").lower() == "true",
+        export_comments=not args.no_comments if args.no_comments is not None
+            else os.environ.get("NOTION_EXPORT_COMMENTS", "true").lower() == "true",
+        downloads_dir=args.output_dir or Path(os.environ.get("DOWNLOADS_DIRECTORY_PATH", "./downloads")),
+        output_filename=args.output_filename or os.environ.get("NOTION_EXPORT_FILENAME"),
+    )
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    flatten_suffix = "-flattened" if flatten else ""
-    filename = f"notion-export-{export_type}{flatten_suffix}_{timestamp}.zip"
-    dest_path = downloads_dir / filename
+
+def main():
+    config = parse_config()
+
+    if config.output_filename:
+        filename = config.output_filename
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        flatten_suffix = "-flattened" if config.flatten else ""
+        filename = f"notion-export-{config.export_type}{flatten_suffix}_{timestamp}.zip"
+    dest_path = config.downloads_dir / filename
 
     client = httpx.Client(
-        cookies={"token_v2": token},
+        cookies={"token_v2": config.token},
         timeout=60,
         follow_redirects=True,
     )
 
     try:
         _task_id, trigger_time = trigger_export_task(
-            client, space_id, export_type, flatten, export_comments
+            client, config.space_id, config.export_type, config.flatten, config.export_comments
         )
-        download_url, notification_id = poll_for_download_url(client, space_id, trigger_time)
+        download_url, notification_id = poll_for_download_url(client, config.space_id, trigger_time)
         download_file(client, download_url, dest_path)
         if notification_id:
-            archive_notification(client, space_id, notification_id)
+            archive_notification(client, config.space_id, notification_id)
         else:
             log.warning("Could not find notification ID to archive")
         log.info("Backup completed successfully")
