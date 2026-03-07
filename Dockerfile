@@ -14,5 +14,6 @@ RUN chmod +x entrypoint.sh
 
 ENV PUID=1000
 ENV PGID=1000
+ENV UV_CACHE_DIR=/app/.cache/uv
 
 CMD ["./entrypoint.sh"]
