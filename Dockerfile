@@ -12,4 +12,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY main.py entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
+ENV PUID=1000
+ENV PGID=1000
+
 CMD ["./entrypoint.sh"]
