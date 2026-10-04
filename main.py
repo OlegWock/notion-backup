@@ -59,6 +59,15 @@ def trigger_export_task(
     return task_id, trigger_time
 
 
+def unwrap_record(record: dict) -> dict:
+    """Returns a recordMap entry's fields. Newer (__version__ 3) responses nest
+    them one level deeper: {"value": {"value": {...}, "role": ...}}."""
+    value = record.get("value", {})
+    if isinstance(value.get("value"), dict):
+        return value["value"]
+    return value
+
+
 def poll_for_download_url(
     client: httpx.Client,
     space_id: str,
@@ -83,7 +92,7 @@ def poll_for_download_url(
         activities = data.get("recordMap", {}).get("activity", {})
 
         for activity_id, activity in activities.items():
-            value = activity.get("value", {})
+            value = unwrap_record(activity)
             try:
                 start_time = int(value.get("start_time", 0))
             except (ValueError, TypeError):
@@ -99,7 +108,7 @@ def poll_for_download_url(
                 # Find the notification ID that references this activity
                 notification_id = None
                 for nid, notif in notifications.items():
-                    nval = notif.get("value", {})
+                    nval = unwrap_record(notif)
                     if nval.get("activity_id") == activity_id:
                         notification_id = nid
                         break
