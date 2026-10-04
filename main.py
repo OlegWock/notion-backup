@@ -161,6 +161,20 @@ def archive_notification(
     log.info("Export notification archived")
 
 
+FILE_TOKEN_HOSTS = ("https://www.notion.so", "https://app.notion.com")
+
+
+def fetch_file_tokens(client: httpx.Client) -> None:
+    """Export links point at file.notion.so or file.notion.com, which require a
+    file_token cookie on top of token_v2. loadUserContent sets it, scoped to the
+    domain it's called on, so call it on both."""
+    for host in FILE_TOKEN_HOSTS:
+        resp = client.post(f"{host}/api/v3/loadUserContent", json={})
+        resp.raise_for_status()
+    if "file_token" not in {cookie.name for cookie in client.cookies.jar}:
+        log.warning("No file_token cookie received; download may be rejected")
+
+
 def download_file(client: httpx.Client, url: str, dest: Path) -> Path:
     """Downloads the export zip to the given path."""
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -246,6 +260,7 @@ def main():
             client, config.space_id, config.export_type, config.flatten, config.export_comments
         )
         download_url, notification_id = poll_for_download_url(client, config.space_id, trigger_time)
+        fetch_file_tokens(client)
         download_file(client, download_url, dest_path)
         if notification_id:
             archive_notification(client, config.space_id, notification_id)
