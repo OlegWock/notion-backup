@@ -9,8 +9,9 @@ chown -R "${PUID}:${PGID}" /app
 RUN_CMD="su -s /bin/sh appuser -c 'cd /app && /bin/uv run --no-sync main.py'"
 
 if [ -n "$CRON_SCHEDULE" ]; then
-    # Dump env vars for cron to source (cron doesn't inherit container env)
-    printenv | grep -v 'no_proxy' > /app/.cronenv
+    # Dump env vars for cron to source (cron doesn't inherit container env).
+    # export -p quotes values and marks them exported, so they reach the su child.
+    export -p | grep -v 'no_proxy' > /app/.cronenv
     chown "${PUID}:${PGID}" /app/.cronenv
 
     cat > /etc/cron.d/notion-backup <<EOF
